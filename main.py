@@ -1,8 +1,52 @@
+"""
+A small Python application to solve Wordle puzzles.
 
-from email.utils import collapse_rfc2231_value
-
-
+Licensed under CreativeCommons Attribution-NonCommercial-ShareAlike 4.0 2022 Sean Dunn
+"""
 ALPHABET = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z']
+
+def main():
+    print("""
+    Sean's Wordle Bot
+
+    Respond reply with unmatched letters with an asterisk, "*",
+    letters matched, but not in the correct position as lowercase, 
+    letters matched and in the correct position as uppercase.
+
+    I.e. 
+        Guess:    PANIC
+        Response  *anI*
+    """)
+
+    words = load_words()
+
+    rejected_letters = set()
+    required_letters = set()
+    letters_rejected_in_positions = set() # Array of tuple of (letter, position)
+    letters_required_in_positions = set() # Set of tuple of (letter, position)
+
+    while True:
+        # Pick the highst-ranked word to guess
+        guessed_word = generate_guess(words)
+
+        rejected_letters, required_letters, letters_rejected_in_positions, letters_required_in_positions = prompt_and_parse_response(
+            guessed_word,
+            rejected_letters,
+            required_letters,
+            letters_rejected_in_positions,
+            letters_required_in_positions)
+
+        words = filter(lambda word: does_word_not_contain_any_letters(word, rejected_letters),words)
+        words = filter(lambda word: does_word_contain_all_letters(word, required_letters), words)
+        words = filter(lambda word: does_word_not_have_any_letters_at_forbidden_position(word, letters_rejected_in_positions), words)
+        words = filter(lambda word: does_word_have_letters_at_required_position(word, letters_required_in_positions), words)
+        words = list(words)
+
+def generate_guess(word_list):
+    letter_freq = calculate_letter_frequency(word_list)
+    sorted_word_list = calculate_letter_frequency_score_for_words(letter_freq, word_list)
+    print(f'\n Next best guesses: {[w[0] for w in sorted_word_list[0:5]]}\n')
+    return sorted_word_list[0][0]
 
 def calculate_letter_frequency(word_list):
     """Calculates a dictionary with each letter being the key, and the value being the frequency of that letter in the dictionary"""
@@ -18,29 +62,23 @@ def calculate_letter_frequency(word_list):
 
 def calculate_letter_frequency_score_for_words(letter_frequency_dict, word_list):
     """Returns a sorted dict of words with the values being a score of the sum of letter frequencies"""
-    word_scores = {word: sum(map(letter_frequency_dict.__getitem__, word)) for word in word_list} 
-    # Sort in reverse order, with the higest score at the top
-    return dict(sorted(word_scores.items(), key=lambda item: item[1],reverse=True))
 
-def has_no_letter_repetitions(word):
-    """Returns `false` if a word repeats a letter more than once"""
-    for l in word:
-        count = 0
-        for j in word:
-            if l == j:
-                count += 1
-        if count > 1:
-            return False
-    return True
+    # Cast word into a set of characters so that scores aren't inflated by duplicate characters
+    word_scores = [(word, sum(map(letter_frequency_dict.__getitem__, set(word)))) for word in word_list]
+    # Sort in reverse order, with the higest score at the top
+    return sorted(word_scores, key=lambda item: item[1],reverse=True)
 
 def load_words():
-    with open ('dict2.txt','r') as f:
+    """Loads words from a dictionary file, and filters to just 5-letter words"""
+    with open ('dict.txt','r') as f:
+        # Read the dictionary and convert to all uppercase
         words = [x.upper() for x in f.read().splitlines()]
 
+    # If using a dictionary that contains words longer than length 5, limit to only 5-letter words
     word_length = 5
 
-    five_letter_words = list(filter(lambda w: len(w) == word_length, words))
-    return five_letter_words
+    words_of_required_length = list(filter(lambda w: len(w) == word_length, words))
+    return words_of_required_length
 
 def does_word_not_contain_any_letters(word, letters):
     """Returns True if none of the letters are contained in the word, otherwise False"""
@@ -57,46 +95,42 @@ def does_word_contain_all_letters(word, letters):
             return False
     return True
 
-def does_word_not_have_any_letters_at_forbidden_position(word, letter_position_dict):
+def does_word_not_have_any_letters_at_forbidden_position(word, letter_position):
     """Returns True if the word does not have any letters at forbidden positions in the word"""
-    for l, pos in letter_position_dict.items():
+    for l, pos in letter_position:
         if word[pos] == l:
             return False
     return True
 
-def does_word_have_letters_at_required_position(word, letter_position_dict):
+def does_word_have_letters_at_required_position(word, letter_position):
     """Returns True if the word has all letters in the required positions"""
-    for l, pos in letter_position_dict.items():
+    for l, pos in letter_position:
         if word[pos] != l:
             return False
     return True
 
-def eliminate_words_with_rejected_letters(word_list, letters):
-    return list(filter(lambda word: does_word_not_contain_any_letters(word, letters),word_list))
+def prompt_and_parse_response(word, rejected_letters, required_letters, letters_rejected_in_positions, letters_required_in_positions):
+    print('Guess:    ' + word)
+    print('Response: ', end='') 
+    response = input()
 
-def eliminate_words_without_required_letters(word_list, letters):
-    return list(filter(lambda word: does_word_contain_all_letters(word, letters), word_list))
+    if response == word:
+        print('Congratulations!')
+        exit(0)
 
-def eliminate_words_with_letters_in_forbidden_positions(word_list, letter_position_dict):
-    return list(filter(lambda word: does_word_not_have_any_letters_at_forbidden_position(word, letter_position_dict), word_list))
-
-def eliminate_words_without_letters_in_required_positions(word_list, letter_position_dict):
-    return list(filter(lambda word: does_word_have_letters_at_required_position(word, letter_position_dict), word_list))
-
-def main():
-    words = load_words()
-    words_without_letter_repetitions = list(filter(has_no_letter_repetitions, words))
-    letter_frequency_dict = calculate_letter_frequency(words)
-    words_with_scores = calculate_letter_frequency_score_for_words(letter_frequency_dict, words_without_letter_repetitions)
-    #print(words_with_scores)
-
-    w = eliminate_words_with_rejected_letters(words_without_letter_repetitions,"ROSEDTL")
-    w = eliminate_words_without_required_letters(w, "AINC")
-    w = eliminate_words_with_letters_in_forbidden_positions(w, {"A": 0, "I":1, "A": 3})
-    w = eliminate_words_without_letters_in_required_positions(w, {"I": 3})
-
-    w = {k:v for k,v in words_with_scores.items() if k in w}
-    print(w)
+    for i, l in enumerate(response):
+        if l.islower():
+            l_upper = l.upper()
+            required_letters.add(l_upper)
+            letters_rejected_in_positions.add((l_upper,i))
+        elif l.isupper():
+            required_letters.add(l)
+            letters_required_in_positions.add((l,i))
+        else:
+            rejected_letters.add(word[i])
+    
+    return rejected_letters, required_letters, letters_rejected_in_positions, letters_required_in_positions
+    
 
 
 if __name__ == '__main__':
